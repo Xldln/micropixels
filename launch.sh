@@ -5,7 +5,7 @@ IMAGE_NAME="micropixels"
 # Build image if not exists
 if ! docker image inspect $IMAGE_NAME > /dev/null 2>&1; then
     echo "Building $IMAGE_NAME image..."
-    docker build -t $IMAGE_NAME .
+    docker build -t $IMAGE_NAME . || exit 1
 fi
 
 docker run \

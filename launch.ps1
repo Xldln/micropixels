@@ -4,6 +4,7 @@ $IMAGE_NAME = "micropixels"
 if (-not (docker images -q $IMAGE_NAME)) {
     Write-Host "Building $IMAGE_NAME image..."
     docker build -t $IMAGE_NAME .
+    if ($LASTEXITCODE -ne 0) { exit 1 }
 }
 
 docker run `

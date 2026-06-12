@@ -32,6 +32,7 @@
 
 from .encoder import RecoEncoder, process_encoder as reco_encoder_main, def_base_parser as def_reco_base_parser, RecoEncoderProcess
 from .decoder import RecoDecoder, RecoDecoderProcess
+from .micropixels import MicroPixels
 
 __all__ = ["RecoEncoder", "RecoDecoder", "def_reco_base_parser", "reco_encoder_main",
-           "RecoEncoderProcess", "RecoDecoderProcess"]
+           "RecoEncoderProcess", "RecoDecoderProcess", "MicroPixels"]

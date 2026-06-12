@@ -4,12 +4,10 @@ FROM nvcr.io/nvidia/tensorrt:19.12-py3
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
         software-properties-common \
-        openssh-server \
-        sudo \
-        net-tools \
         ffmpeg \
         libsm6 \
         libxext6 \
+        wget \
         && \
     add-apt-repository -y ppa:deadsnakes/ppa && \
     apt-get update && \
@@ -21,8 +19,10 @@ RUN apt-get update && \
     rm -rf /var/lib/apt/lists/* && \
     update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.7 1 && \
     update-alternatives --install /usr/bin/python python /usr/bin/python3.7 1 && \
-    python3 -m ensurepip --upgrade && \
-    python3 -m pip install --upgrade pip setuptools wheel
+    ln -sf /usr/bin/python3.7-config /usr/bin/python3-config && \
+    wget https://bootstrap.pypa.io/pip/3.7/get-pip.py -O /tmp/get-pip.py && \
+    python3.7 /tmp/get-pip.py && \
+    python3.7 -m pip install --upgrade pip setuptools wheel
 
 # Install Python dependencies
 COPY requirements.txt /tmp/requirements.txt
@@ -33,6 +33,6 @@ RUN python3 -m pip install --no-cache-dir -r /tmp/requirements.txt \
 WORKDIR /workspace
 COPY . /workspace
 
-# Build C++ extensions (me-tANS and direct ECU)
-RUN cd /workspace/src/codec/entropy_coding/cpp_exts/mans && make && \
-    cd /workspace/src/codec/entropy_coding/cpp_exts/direct && make
+
+# Keep container running for development
+CMD ["tail", "-f", "/dev/null"]

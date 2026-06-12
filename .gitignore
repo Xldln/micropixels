@@ -1,3 +1,18 @@
 
 
 .crush
+
+.logs/*
+
+.logs/.gitkeep
+
+models/*
+models/.gitkeep
+
+/__pycache__/
+
+*.pyc
+*.pyo
+*.so
+*.log
+*.tmp
