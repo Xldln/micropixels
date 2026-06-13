@@ -83,9 +83,10 @@ app.add_middleware(
 
 # templates = Jinja2Templates(directory="app/templates")
 
-# @app.get("/")
-# async def index(request: Request):
-#     return templates.TemplateResponse("index.html", {"request": request})
+@app.get("/")
+async def test():
+
+    return "hello micropixels service"
 
 if __name__ == "__main__":
     logger.info("start micropixels service...")

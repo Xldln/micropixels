@@ -69,7 +69,12 @@ class MicroPixels:
         self.encoder = RecoEncoder(self._enc_base_parser, self._enc_parser_decorator)
 
         self.encoder.print_coder_info()
-        self.encoder.init_common_codec(build_model=True, cmd_args=encoder_cmd_args)
+        # Pad placeholder positional args (input_path, bin_path) so argparse doesn't fail.
+        # Real paths are passed via encode_stream(params) at runtime.
+        _enc_args = list(encoder_cmd_args or [])
+        if not any(a for a in _enc_args if not a.startswith("-")):
+            _enc_args += ["input.png", "output.bin"]
+        self.encoder.init_common_codec(build_model=True, cmd_args=_enc_args)
         if device == 'cpu':
             torch.set_num_threads(1)
         self.encoder.load_models(
@@ -82,7 +87,10 @@ class MicroPixels:
         self.decoder = RecoDecoder(self._dec_base_parser, self._dec_parser_decorator)
 
         self.decoder.print_coder_info()
-        self.decoder.init_common_codec(build_model=True, cmd_args=decoder_cmd_args)
+        _dec_args = list(decoder_cmd_args or [])
+        if not any(a for a in _dec_args if not a.startswith("-")):
+            _dec_args += ["input.bin", "output.png"]
+        self.decoder.init_common_codec(build_model=True, cmd_args=_dec_args)
         if device == 'gpu':
             self.decoder.init_cuda()
         self.decoder.setup_ptflops_custom_hooks()
