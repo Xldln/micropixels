@@ -1,69 +1,79 @@
-# MicroPixels
+<p align="center">
+  <img src="public/logo.png" alt="MicroPixels Logo" width="200"/>
+</p>
 
-**MicroPixels** is a neural network-based image compression service that uses deep learning to compress images into compact bitstreams and reconstruct high-quality images from them. It provides both a REST API (FastAPI) and CLI tools for encoding/decoding.
+<h1 align="center">MicroPixels</h1>
+
+<p align="center">
+  <strong>JPEG AI neural-network image compression service</strong>
+</p>
+
+<p align="center">
+  <img src="public/demo.gif" alt="Demo" width="700"/>
+</p>
+
+MicroPixels is an image compression service based on the **JPEG AI** neural network model. It leverages deep learning to compress images into compact bitstreams with significantly better rate-distortion performance than traditional codecs, and reconstructs high-quality images from those bitstreams. The project provides a **REST API (FastAPI)** for the backend, a **React web UI** for the frontend, and **CLI tools** for direct encoding/decoding.
+
+---
 
 ## Quick Start
 
-### Prerequisites
-
-- Python 3.7+
-- CUDA-capable GPU (recommended)
-- Docker (optional, for containerized deployment)
-
-### Setup
-
-#### Option 1: Docker (Recommended)
+### Option A: Docker (Recommended)
 
 ```bash
-# Build and start the container
-./launch.sh      # Linux
-./launch.ps1     # Windows PowerShell
+# Linux
+./launch.sh
+
+# Windows PowerShell
+./launch.ps1
 ```
 
-The service will start on port `9000`.
+The script will automatically:
+1. Build the Docker image (skipped if already exists)
+2. Start the container (restart if stopped, create if not exists)
+3. Download pretrained weights & run verification
+4. Install npm dependencies (first time only) & start **React frontend** on `http://localhost:8999`
+5. Start the **backend service** on port `9000`
 
-#### Option 2: Native
+### Option B: Native
 
 ```bash
-# Install dependencies
 pip install -r requirements.txt
-
-# Compile C++ entropy coding extensions
 cd src/codec/entropy_coding/cpp_exts/mans && make
 cd src/codec/entropy_coding/cpp_exts/direct && make
-
-# Download pretrained models
 mkdir -p models && cd models
 wget https://yubinux.cn/tmp/pt/models.zip && unzip models.zip && rm models.zip
-```
+cd ../..
 
-### Start Service
-
-```bash
+# Start backend
 python main.py
+
+# In another terminal, start frontend
+npm install    # first time only
+npm run dev
 ```
 
-The service listens on `http://0.0.0.0:9000`.
+---
 
-## Usage
+## Business Capabilities
 
 ### REST API
 
-**Compress an image:**
+| Endpoint | Description |
+|---|---|
+| `POST /micropixels/compress` | Compress an image → download `.bin` bitstream |
+| `POST /micropixels/rebuild` | Reconstruct image from a `.bin` bitstream |
 
+**Compress:**
 ```bash
 curl -X POST http://localhost:9000/micropixels/compress \
-  -F "image=@test.png" \
-  -F "bpp_idx=0" \
-  -o output.bin
+  -F "image=@test.png" -F "bpp_idx=0" -o output.bin
 ```
 
-**Rebuild image from bitstream:**
-
+**Rebuild:**
 ```bash
 curl -X POST http://localhost:9000/micropixels/rebuild \
-  -F "bin=@output.bin" \
-  -o reconstructed.png
+  -F "bin=@output.bin" -o reconstructed.png
 ```
 
 ### CLI
@@ -71,29 +81,17 @@ curl -X POST http://localhost:9000/micropixels/rebuild \
 ```bash
 # Encode (compress)
 python -m src.reco.coders.encoder test.png output.bin \
-  --set_target_bpp 100 \
-  --cfg cfg/tools_off.json cfg/profiles/high.json
+  --set_target_bpp 100 --cfg cfg/tools_off.json cfg/profiles/high.json
 
 # Decode (reconstruct)
 python -m src.reco.coders.decoder output.bin rebuild_img.png
 ```
 
-### Configuration
+### Parameters
 
-Compression behavior can be customized via JSON config files in the `cfg/` directory. Pass them with the `--cfg` flag (CLI) or `cfg` form parameter (API):
-
-| Config File | Purpose |
-|---|---|
-| `cfg/tools_off.json` | Disable all tools |
-| `cfg/tools_on.json` | Enable all tools |
-| `cfg/profiles/high.json` | High-quality profile |
-| `cfg/profiles/low.json` | Low bitrate profile |
-
-### API Parameters
-
-| Endpoint | Parameter | Type | Description |
-|---|---|---|---|
-| `POST /micropixels/compress` | `image` | file | Input image (PNG, etc.) |
-| | `bpp_idx` | int | Target bitrate index (0 = highest quality) |
-| | `cfg` | str (optional) | Config paths, semicolon-separated |
-| `POST /micropixels/rebuild` | `bin` | file | Compressed bitstream (`.bin`) |
+| Param | Type | Description |
+|---|---|---|
+| `image` | file | Input image (PNG, etc.) |
+| `bin` | file | Compressed bitstream |
+| `bpp_idx` | int | Bitrate index (0 = highest quality) |
+| `cfg` | str | Config paths, semicolon-separated |
