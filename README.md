@@ -5,6 +5,10 @@
 <h1 align="center">MicroPixels</h1>
 
 <p align="center">
+  <a href="README-zh.md">zh</a> · <strong>ENG</strong>
+</p>
+
+<p align="center">
   <strong>JPEG AI neural-network image compression service</strong>
 </p>
 
@@ -31,8 +35,8 @@ MicroPixels is an image compression service based on the **JPEG AI** neural netw
 The script will automatically:
 1. Build the Docker image (skipped if already exists)
 2. Start the container (restart if stopped, create if not exists)
-3. Download pretrained weights & run verification
-4. Install npm dependencies (first time only) & start **React frontend** on `http://localhost:8999`
+3. Run `dl.sh` to download pretrained weights, then `test.sh` for verification
+4. Check port 8999 — if already in use, skip React startup; otherwise install npm dependencies (first time) & start **React frontend** on `http://localhost:8999`
 5. Start the **backend service** on port `9000`
 
 ### Option B: Native
@@ -41,15 +45,13 @@ The script will automatically:
 pip install -r requirements.txt
 cd src/codec/entropy_coding/cpp_exts/mans && make
 cd src/codec/entropy_coding/cpp_exts/direct && make
-mkdir -p models && cd models
-wget https://yubinux.cn/tmp/pt/models.zip && unzip models.zip && rm models.zip
-cd ../..
+bash dl.sh          # download pretrained weights
 
-# Start backend
+# Start backend (loguru logs to ./logs/app_*.log)
 python main.py
 
 # In another terminal, start frontend
-npm install    # first time only
+npm install         # first time only
 npm run dev
 ```
 
@@ -63,6 +65,7 @@ npm run dev
 |---|---|
 | `POST /micropixels/compress` | Compress an image → download `.bin` bitstream |
 | `POST /micropixels/rebuild` | Reconstruct image from a `.bin` bitstream |
+| `GET /micropixels/logs` | Retrieve backend logs (supports offset-based pagination) |
 
 **Compress:**
 ```bash
@@ -95,3 +98,35 @@ python -m src.reco.coders.decoder output.bin rebuild_img.png
 | `bin` | file | Compressed bitstream |
 | `bpp_idx` | int | Bitrate index (0 = highest quality) |
 | `cfg` | str | Config paths, semicolon-separated |
+
+---
+
+## Architecture
+
+```
+┌─────────────────────────────────────────────────────┐
+│                    Host                              │
+│  ┌──────────────┐     ┌───────────────────────────┐ │
+│  │  React UI    │     │  Docker Container          │ │
+│  │  localhost:  │     │  ┌─────────────────────┐  │ │
+│  │  8999        │────▶│  │  FastAPI Backend    │  │ │
+│  │              │     │  │  localhost:9000     │  │ │
+│  └──────────────┘     │  │  ┌───────────────┐  │  │ │
+│                       │  │  │ JPEG AI Model  │  │  │ │
+│                       │  │  └───────────────┘  │  │ │
+│                       │  └─────────────────────┘  │ │
+│  ┌──────────────┐     └───────────────────────────┘ │
+│  │  loguru      │                                    │
+│  │  ./logs/     │     Backend logging system:        │
+│  │  app_*.log   │     - stdout/stderr captured      │
+│  └──────────────┘     - codec Logger() output       │
+│                          filtered & routed to file   │
+└─────────────────────────────────────────────────────┘
+```
+
+### Key Features
+
+- **Port auto-detection** — React dev server on 8999 is only started if port is free
+- **Logging** — All `print()` / `Logger.info()` from the codec library, plus uvicorn & FastAPI logs, are captured by **loguru** and written to `./logs/app_YYYY-MM-DD.log` with UTF-8 encoding
+- **Weight management** — `dl.sh` downloads pretrained models, `test.sh` verifies them with a full encode/decode cycle
+- **React frontend** — Web UI served on `localhost:8999`, communicates with the backend API on port 9000 (CORS configured)
