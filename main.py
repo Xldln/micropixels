@@ -70,7 +70,8 @@ app.include_router(micropixels_router)
 
 origins = [
     "http://127.0.0.1",
-
+    "http://localhost:8999",
+    "http://localhost:9000",
 ]
 
 app.add_middleware(

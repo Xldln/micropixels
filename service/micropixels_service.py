@@ -2,13 +2,16 @@ import os
 import io
 import tempfile
 import shutil
+from datetime import date
 from pathlib import Path
 from typing import Optional
-from fastapi import APIRouter, UploadFile, File, Form, HTTPException
-from fastapi.responses import StreamingResponse
+from fastapi import APIRouter, UploadFile, File, Form, HTTPException, Query
+from fastapi.responses import StreamingResponse, JSONResponse
 from loguru import logger
 
 from src.reco.coders.micropixels import MicroPixels
+
+LOG_PATH = "./logs"
 
 
 micropixels_router = APIRouter(
@@ -141,3 +144,29 @@ async def rebuild_micropixels(bin: UploadFile = File(...)):
         raise HTTPException(status_code=500, detail=str(e))
     finally:
         shutil.rmtree(temp_dir, ignore_errors=True)
+
+
+def _today_log_path() -> str:
+    return os.path.join(LOG_PATH, f"app_{date.today().isoformat()}.log")
+
+
+@micropixels_router.get("/logs")
+async def get_logs(offset: int = Query(0, ge=0)):
+    log_file = _today_log_path()
+    if not os.path.exists(log_file):
+        return JSONResponse({"lines": [], "offset": 0, "total": 0})
+
+    with open(log_file, "r", encoding="utf-8") as f:
+        f.seek(offset)
+        new_content = f.read()
+        new_offset = f.tell()
+
+    lines = new_content.split("\n")
+    if lines and lines[-1] == "":
+        lines = lines[:-1]
+
+    return JSONResponse({
+        "lines": lines,
+        "offset": new_offset,
+        "total": len(lines),
+    })
