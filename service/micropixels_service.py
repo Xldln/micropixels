@@ -20,18 +20,23 @@ micropixels_router = APIRouter(
 )
 
 _micropixels: Optional[MicroPixels] = None
+_current_cfg: Optional[str] = None
 
 
-def get_micropixels() -> MicroPixels:
-    global _micropixels
-    if _micropixels is None:
-        logger.info("Initializing MicroPixels engine (device=cuda)")
-        _micropixels = MicroPixels(
-            device="cuda",
-            encoder_cmd_args=[],
-            decoder_cmd_args=[],
-        )
-        logger.info("MicroPixels engine initialized successfully")
+def get_micropixels(encoder_cmd_args=None) -> MicroPixels:
+    global _micropixels, _current_cfg
+    cfg_key = ";".join(encoder_cmd_args or [])
+    if _micropixels is not None and _current_cfg == cfg_key:
+        return _micropixels
+
+    logger.info(f"Initializing MicroPixels engine (device=cuda, cfg={cfg_key or 'default'})")
+    _micropixels = MicroPixels(
+        device="cuda",
+        encoder_cmd_args=encoder_cmd_args or [],
+        decoder_cmd_args=[],
+    )
+    _current_cfg = cfg_key
+    logger.info("MicroPixels engine initialized successfully")
     return _micropixels
 
 
@@ -68,14 +73,11 @@ async def compress_micropixels(
 
         logger.info(f"Compressing {image.filename} ({len(content)} bytes), bpp_idx={bpp_idx}")
 
-        mp = _micropixels
-
+        cfg_args = []
         if cfg:
-            cfg_args = []
             for c in cfg.split(";"):
                 cfg_args.extend(["--cfg", c.strip()])
-            mp.encoder.init_common_codec(build_model=False, cmd_args=cfg_args)
-            logger.info(f"Applied configs: {cfg}")
+        mp = get_micropixels(encoder_cmd_args=cfg_args)
 
         mp.encoder.set_target_bpp_idx(bpp_idx)
         mp.encode_stream({"input_path": input_path, "bin_path": bin_path})

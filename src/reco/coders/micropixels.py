@@ -68,12 +68,9 @@ class MicroPixels:
         self._enc_parser_decorator = def_encoder_parser_decorator(self._enc_base_parser)
         self.encoder = RecoEncoder(self._enc_base_parser, self._enc_parser_decorator)
 
-        self.encoder.print_coder_info()
-        # Pad placeholder positional args (input_path, bin_path) so argparse doesn't fail.
-        # Real paths are passed via encode_stream(params) at runtime.
-        _enc_args = list(encoder_cmd_args or [])
-        if not any(a for a in _enc_args if not a.startswith("-")):
-            _enc_args += ["input.png", "output.bin"]
+        # Pad placeholder positional args (input_path, bin_path) before --cfg so argparse nargs='+'
+        # doesn't consume them. Real paths are passed via encode_stream(params) at runtime.
+        _enc_args = ["input.png", "output.bin"] + list(encoder_cmd_args or [])
         self.encoder.init_common_codec(build_model=True, cmd_args=_enc_args)
         if device == 'cpu':
             torch.set_num_threads(1)
@@ -87,9 +84,7 @@ class MicroPixels:
         self.decoder = RecoDecoder(self._dec_base_parser, self._dec_parser_decorator)
 
         self.decoder.print_coder_info()
-        _dec_args = list(decoder_cmd_args or [])
-        if not any(a for a in _dec_args if not a.startswith("-")):
-            _dec_args += ["input.bin", "output.png"]
+        _dec_args = ["input.bin", "output.png"] + list(decoder_cmd_args or [])
         self.decoder.init_common_codec(build_model=True, cmd_args=_dec_args)
         if device == 'gpu':
             self.decoder.init_cuda()

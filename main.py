@@ -1,17 +1,13 @@
-from typing import Union
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi import FastAPI,Request
-from service import *
-import uvicorn
 import logging
-from loguru import logger
 import sys
 import os
-# from fastapi.templating import Jinja2Templates
+
+from loguru import logger
 
 LOG_PATH = "./logs"
 if not os.path.exists(LOG_PATH):
     os.makedirs(LOG_PATH)
+
 
 class InterceptHandler(logging.Handler):
     def emit(self, record):
@@ -22,12 +18,21 @@ class InterceptHandler(logging.Handler):
 
         logger.opt(depth=6, exception=record.exc_info).log(level, record.getMessage())
 
+
+def _uvicorn_running_filter(record: dict) -> bool:
+    msg = record.get("message", "")
+    if isinstance(msg, str) and msg.startswith("Uvicorn running on "):
+        return False
+    return True
+
+
 def setup_logging():
     logger.remove()
 
     logger.add(sys.stdout,
                level="DEBUG",
                colorize=True,
+               filter=_uvicorn_running_filter,
                format="<green>{time:YYYY-MM-DD HH:mm:ss.SSS}</green> | "
                       "<level>{level: <8}</level> | "
                       "<cyan>{name}</cyan>:<cyan>{function}</cyan>:<cyan>{line}</cyan> - "
@@ -38,16 +43,15 @@ def setup_logging():
                retention="15 days",
                compression="zip",
                encoding="utf-8",
-               level="INFO")
+               level="INFO",
+               filter=_uvicorn_running_filter)
 
-    # 将 uvicorn 与 logging 框架输出交给 loguru
-    logging.root.handlers = [InterceptHandler()]    # ★ 只设置一次 handler
+    logging.root.handlers = [InterceptHandler()]
     logging.root.setLevel(logging.INFO)
 
-    # 清空 uvicorn 子 logger，自然会冒泡到 root logger
     for name in ("uvicorn", "uvicorn.error", "uvicorn.access", "fastapi"):
         logging.getLogger(name).handlers = []
-        logging.getLogger(name).propagate = True     # ★ 让日志冒泡即可
+        logging.getLogger(name).propagate = True
 
     class StreamToLogger(object):
         def write(self, message):
@@ -63,6 +67,13 @@ def setup_logging():
 
 setup_logging()
 logger.info("日志系统初始化完成")
+
+from typing import Union
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi import FastAPI, Request
+from service import *
+import uvicorn
+# from fastapi.templating import Jinja2Templates
 
 
 app = FastAPI()

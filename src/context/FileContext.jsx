@@ -6,11 +6,27 @@ let nextId = 1
 
 const initialState = {
   root: { id: 'root', name: 'Workspace', type: 'folder', children: [] },
-  items: { root: { id: 'root', name: 'Workspace', type: 'folder', children: [] } },
+  items: {
+    root: { id: 'root', name: 'Workspace', type: 'folder', children: [] },
+  },
+  rebuildResultId: null,
 }
+
+const REBUILD_RESULT_ID = 'rebuild-result-folder'
+const COMPRESS_BIN_ID = 'compress-bin-folder'
 
 function reducer(state, action) {
   switch (action.type) {
+    case 'INIT_FOLDER': {
+      if (state.items[action.id]) return state
+      const folder = { id: action.id, name: action.name, type: 'folder', children: [] }
+      const parent = { ...state.items[action.parentId] }
+      parent.children = [...parent.children, action.id]
+      return {
+        ...state,
+        items: { ...state.items, [action.id]: folder, [action.parentId]: parent },
+      }
+    }
     case 'CREATE_FOLDER': {
       const id = `folder-${nextId++}`
       const folder = { id, name: action.name, type: 'folder', children: [] }
@@ -151,6 +167,18 @@ export function FileProvider({ children }) {
     [state.items],
   )
 
+  const getRebuildDir = useCallback(() => {
+    if (state.items[REBUILD_RESULT_ID]) return REBUILD_RESULT_ID
+    dispatch({ type: 'INIT_FOLDER', id: REBUILD_RESULT_ID, name: 'RebuildResult', parentId: 'root' })
+    return REBUILD_RESULT_ID
+  }, [state.items])
+
+  const getCompressDir = useCallback(() => {
+    if (state.items[COMPRESS_BIN_ID]) return COMPRESS_BIN_ID
+    dispatch({ type: 'INIT_FOLDER', id: COMPRESS_BIN_ID, name: 'CompressBin', parentId: 'root' })
+    return COMPRESS_BIN_ID
+  }, [state.items])
+
   const findParentId = useCallback(
     (childId) => {
       for (const [id, item] of Object.entries(state.items)) {
@@ -189,6 +217,8 @@ export function FileProvider({ children }) {
         getResults,
         findParentId,
         getSiblingImages,
+        getRebuildDir,
+        getCompressDir,
       }}
     >
       {children}

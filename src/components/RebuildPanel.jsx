@@ -1,136 +1,193 @@
-import { useState } from 'react'
+import { useState, useRef } from 'react'
 import { useFiles } from '../context/FileContext'
 import './CompressPanel.css'
 
-export default function RebuildPanel({ compact }) {
-  const { getResults, addResult, removeResult } = useFiles()
-  const compressResults = getResults('compress')
-  const rebuildResults = getResults('rebuild')
+const API_BASE = 'http://localhost:9000/micropixels'
+
+export default function RebuildPanel({ compact, selectedBinId, onPreview, onClearBin }) {
+  const { getItem, addFiles, getRebuildDir } = useFiles()
+  const selectedFile = selectedBinId ? getItem(selectedBinId) : null
   const [rebuilding, setRebuilding] = useState(false)
   const [progress, setProgress] = useState(0)
-  const [selectedForRebuild, setSelectedForRebuild] = useState(null)
+  const [localFile, setLocalFile] = useState(null)
+  const fileInputRef = useRef(null)
+
+  const handleUpload = (e) => {
+    const files = Array.from(e.target.files || [])
+    const bins = files.filter((f) => f.name.toLowerCase().endsWith('.bin'))
+    if (bins.length > 0) {
+      addFiles('root', bins)
+      const item = {
+        id: `local-${Date.now()}`,
+        name: bins[0].name,
+        type: 'file',
+        file: bins[0],
+        blobUrl: URL.createObjectURL(bins[0]),
+      }
+      setLocalFile(item)
+      if (selectedFile) onClearBin()
+    }
+    e.target.value = ''
+  }
+
+  const handleDragOver = (e) => {
+    e.preventDefault()
+    e.stopPropagation()
+  }
+
+  const handleDrop = (e) => {
+    e.preventDefault()
+    e.stopPropagation()
+    const files = Array.from(e.dataTransfer.files || [])
+    const bins = files.filter((f) => f.name.toLowerCase().endsWith('.bin'))
+    if (bins.length > 0) {
+      addFiles('root', bins)
+      const item = {
+        id: `local-${Date.now()}`,
+        name: bins[0].name,
+        type: 'file',
+        file: bins[0],
+        blobUrl: URL.createObjectURL(bins[0]),
+      }
+      setLocalFile(item)
+      if (selectedFile) onClearBin()
+    }
+  }
+
+  const activeFile = selectedFile || localFile
 
   const handleRebuild = async () => {
-    const source = selectedForRebuild || compressResults
-    const sources = Array.isArray(source) ? source : [source]
-    if (!sources.length) return
-
+    if (!activeFile) return
     setRebuilding(true)
     setProgress(0)
 
-    for (let i = 0; i < sources.length; i++) {
-      const item = sources[i]
-      try {
-        const response = await fetch(item.blobUrl)
-        const blob = await response.blob()
-        const name = item.name
-          .replace('_c.jpg', '_r.jpg')
-          .replace(/\.\w+$/, '_r.$&')
-        addResult(name, blob, 'image', 'rebuild')
-      } catch (err) {
-        console.error(`Failed to rebuild ${item.name}:`, err)
+    try {
+      const formData = new FormData()
+      let blob
+      if (activeFile.file) {
+        blob = activeFile.file
+      } else if (activeFile.blobUrl) {
+        const resp = await fetch(activeFile.blobUrl)
+        blob = await resp.blob()
+      } else {
+        throw new Error('No source data')
       }
-      setProgress(Math.round(((i + 1) / sources.length) * 100))
-      await sleep(50)
+      formData.append('bin', blob, activeFile.name)
+
+      setProgress(30)
+      const resp = await fetch(`${API_BASE}/rebuild`, { method: 'POST', body: formData })
+      if (!resp.ok) throw new Error(`Rebuild failed: ${resp.status}`)
+
+      setProgress(70)
+      const resultBlob = await resp.blob()
+      const resultName = activeFile.name.replace(/\.bin$/i, '_reconstructed.png')
+
+      const rebuildDirId = getRebuildDir()
+      const resultFile = new File([resultBlob], resultName, { type: 'image/png' })
+      addFiles(rebuildDirId, [resultFile])
+
+      setProgress(100)
+
+      const previewItem = {
+        id: `rebuild-result-${Date.now()}`,
+        name: resultName,
+        type: 'image',
+        blobUrl: URL.createObjectURL(resultBlob),
+        file: resultFile,
+      }
+      onPreview(previewItem)
+
+      await sleep(300)
+    } catch (err) {
+      console.error('Rebuild error:', err)
+      alert(`Rebuild failed: ${err.message}`)
     }
 
     setRebuilding(false)
     setProgress(0)
   }
 
-  const handleDownload = (item) => {
-    const a = document.createElement('a')
-    a.href = item.blobUrl
-    a.download = item.name
-    a.click()
+  const panelContent = (
+    <div className="panel-body">
+      <div className="section">
+        <h3 className="section-title">Bitstream Source</h3>
+        <div className="file-list">
+          <div
+            className="file-list-dropzone"
+            onDragOver={handleDragOver}
+            onDrop={handleDrop}
+            onClick={() => fileInputRef.current?.click()}
+          >
+            <span className="dropzone-icon">📥</span>
+            <span className="dropzone-text">
+              Click or drag .bin files here
+            </span>
+          </div>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".bin"
+            multiple
+            onChange={handleUpload}
+            style={{ display: 'none' }}
+          />
+
+          {activeFile && (
+            <div className="file-item selected">
+              <span className="file-icon">📦</span>
+              <span className="file-name">{activeFile.name}</span>
+              <span className="file-badge">
+                {formatSize(activeFile.file?.size)}
+              </span>
+              {localFile && <span className="file-badge" style={{ color: '#654ea3' }}>local</span>}
+            </div>
+          )}
+
+          {!activeFile && (
+            <p className="empty-hint">
+              Click a .bin file in the workspace, or upload one here
+            </p>
+          )}
+        </div>
+      </div>
+
+      <div className="section">
+        <button
+          className="btn btn-primary"
+          onClick={handleRebuild}
+          disabled={rebuilding || !activeFile}
+        >
+          {rebuilding ? `Rebuilding… ${progress}%` : 'Rebuild'}
+        </button>
+        {rebuilding && (
+          <div className="progress-bar">
+            <div className="progress-fill" style={{ width: `${progress}%` }} />
+          </div>
+        )}
+      </div>
+
+      <div className="section">
+        <h3 className="section-title">Rebuild History</h3>
+        <div className="result-list">
+          <p className="empty-hint">
+            Results saved to Workspace &gt; RebuildResult folder
+          </p>
+        </div>
+      </div>
+    </div>
+  )
+
+  if (compact) {
+    return (
+      <div className="panel panel-compact">
+        {panelContent}
+      </div>
+    )
   }
 
-  const CompressedList = (
-    <div className="section">
-      <h3 className="section-title">
-        Compressed Files ({compressResults.length})
-      </h3>
-      <div className="file-list">
-        {compressResults.length === 0 ? (
-          <p className="empty-hint">Run compression first</p>
-        ) : (
-          compressResults.map((r) => (
-            <div
-              key={r.id}
-              className={`file-item ${selectedForRebuild?.id === r.id ? 'selected' : ''}`}
-              onClick={() =>
-                setSelectedForRebuild(
-                  selectedForRebuild?.id === r.id ? null : r,
-                )
-              }
-            >
-              <span className="file-icon">📦</span>
-              <span className="file-name">{r.name}</span>
-              <span className="file-badge">{formatSize(r.blob?.size)}</span>
-            </div>
-          ))
-        )}
-      </div>
-    </div>
-  )
-
-  const RebuildBtn = (
-    <div className="section">
-      <button
-        className="btn btn-primary"
-        onClick={handleRebuild}
-        disabled={rebuilding || compressResults.length === 0}
-      >
-        {rebuilding ? `Rebuilding… ${progress}%` : 'Rebuild'}
-      </button>
-      {rebuilding && (
-        <div className="progress-bar">
-          <div className="progress-fill" style={{ width: `${progress}%` }} />
-        </div>
-      )}
-    </div>
-  )
-
-  const Results = (
-    <div className="section">
-      <h3 className="section-title">
-        Rebuilt Results ({rebuildResults.length})
-      </h3>
-      <div className="result-list">
-        {rebuildResults.length === 0 ? (
-          <p className="empty-hint">No rebuilt results yet</p>
-        ) : (
-          rebuildResults.map((r) => (
-            <div key={r.id} className="result-item">
-              <span className="file-icon">🔄</span>
-              <span className="file-name" title={r.name}>
-                {r.name}
-              </span>
-              <span className="file-badge">{formatSize(r.blob?.size)}</span>
-              <button className="btn btn-sm" onClick={() => handleDownload(r)}>
-                ↓
-              </button>
-              <button
-                className="btn btn-sm"
-                onClick={() => removeResult(r.id)}
-                style={{ color: '#ef4444' }}
-              >
-                ×
-              </button>
-            </div>
-          ))
-        )}
-      </div>
-    </div>
-  )
-
   return (
-    <div className={`panel ${compact ? 'panel-compact' : ''}`}>
-      <div className="panel-body">
-        {CompressedList}
-        {RebuildBtn}
-        {Results}
-      </div>
+    <div className="panel">
+      {panelContent}
     </div>
   )
 }

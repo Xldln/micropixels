@@ -11,6 +11,7 @@ function AppInner() {
   const [loading, setLoading] = useState(true)
   const [activeTab, setActiveTab] = useState('compress')
   const [selectedImage, setSelectedImage] = useState(null)
+  const [selectedRebuildBinId, setSelectedRebuildBinId] = useState(null)
   const [sidebarWidth, setSidebarWidth] = useState(340)
   const resizing = useRef(false)
   const { getItem, getSiblingImages } = useFiles()
@@ -25,6 +26,11 @@ function AppInner() {
   }, [getItem])
 
   const handleSplashDone = useCallback(() => setLoading(false), [])
+
+  const handleSelectBin = useCallback((item) => {
+    setSelectedRebuildBinId(item.id)
+    setActiveTab('rebuild')
+  }, [])
 
   const handleResizeStart = useCallback((e) => {
     e.preventDefault()
@@ -60,6 +66,8 @@ function AppInner() {
       <div className="app" style={{ visibility: loading ? 'hidden' : 'visible' }}>
         <Sidebar
           onSelectImage={setSelectedImage}
+          onSelectBin={handleSelectBin}
+          selectedRebuildBinId={selectedRebuildBinId}
           selectedImageId={selectedImage?.id}
           width={sidebarWidth}
         />
@@ -101,7 +109,12 @@ function AppInner() {
                     compact
                   />
                 ) : (
-                  <RebuildPanel compact />
+                  <RebuildPanel
+                    compact
+                    selectedBinId={selectedRebuildBinId}
+                    onClearBin={() => setSelectedRebuildBinId(null)}
+                    onPreview={setSelectedImage}
+                  />
                 )}
               </div>
             ) : (
@@ -111,7 +124,11 @@ function AppInner() {
                   onSelectFile={setSelectedImage}
                 />
               ) : (
-                <RebuildPanel />
+                <RebuildPanel
+                  selectedBinId={selectedRebuildBinId}
+                  onClearBin={() => setSelectedRebuildBinId(null)}
+                  onPreview={setSelectedImage}
+                />
               )
             )}
           </div>

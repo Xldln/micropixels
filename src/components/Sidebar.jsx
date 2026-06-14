@@ -1,16 +1,19 @@
 import { useState, useRef } from 'react'
 import { useFiles } from '../context/FileContext'
+import JSZip from 'jszip'
 import LogPanel from './LogPanel'
 import './Sidebar.css'
 
-const ACCEPT_TYPES = 'image/*,.zip,.tar,.gz,.7z,.rar'
+const ACCEPT_TYPES = 'image/*,.zip,.tar,.gz,.7z,.rar,.bin,.mp4,.h264,.h265'
 
 function TreeNode({
   itemId,
   depth = 0,
   parentId = null,
   onSelectImage,
+  onSelectBin,
   selectedImageId,
+  selectedRebuildBinId,
 }) {
   const { getItem, getChildren, createFolder, addFiles, deleteItem, moveItem } =
     useFiles()
@@ -33,6 +36,8 @@ function TreeNode({
   const handleClick = () => {
     if (isImage) {
       onSelectImage(item)
+    } else if (item.name?.toLowerCase().endsWith('.bin')) {
+      onSelectBin?.(item)
     } else if (isFolder) {
       setExpanded(!expanded)
     }
@@ -50,7 +55,7 @@ function TreeNode({
     const validFiles = files.filter(
       (f) =>
         f.type.startsWith('image/') ||
-        /\.(zip|tar|gz|7z|rar)$/i.test(f.name),
+        /\.(zip|tar|gz|7z|rar|bin|mp4|h264|h265)$/i.test(f.name),
     )
     if (validFiles.length) {
       addFiles(itemId, validFiles)
@@ -69,6 +74,53 @@ function TreeNode({
     }
     setNewFolder(false)
     setFolderName('')
+  }
+
+  const downloadFile = async () => {
+    if (isFolder) return
+    let blob
+    if (item.file) {
+      blob = item.file
+    } else if (item.blobUrl) {
+      const r = await fetch(item.blobUrl)
+      blob = await r.blob()
+    }
+    if (!blob) return
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = item.name
+    a.click()
+    URL.revokeObjectURL(url)
+  }
+
+  const exportFolder = async () => {
+    if (!isFolder) return
+    const zip = new JSZip()
+    const collectFiles = async (folderId, zipPath) => {
+      const kids = getChildren(folderId)
+      for (const kid of kids) {
+        if (kid.type === 'folder') {
+          await collectFiles(kid.id, `${zipPath}${kid.name}/`)
+        } else {
+          let blob
+          if (kid.file) blob = kid.file
+          else if (kid.blobUrl) {
+            const r = await fetch(kid.blobUrl)
+            blob = await r.blob()
+          }
+          if (blob) zip.file(`${zipPath}${kid.name}`, blob)
+        }
+      }
+    }
+    await collectFiles(itemId, '')
+    const zipBlob = await zip.generateAsync({ type: 'blob' })
+    const url = URL.createObjectURL(zipBlob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `${item.name}.zip`
+    a.click()
+    URL.revokeObjectURL(url)
   }
 
   const onDragStart = (e) => {
@@ -123,7 +175,7 @@ function TreeNode({
     <div className="tree-node">
       <div
         className={`tree-row ${item.type} ${dragOver ? 'drag-over' : ''} ${
-          selectedImageId === itemId ? 'selected' : ''
+          selectedImageId === itemId || selectedRebuildBinId === itemId ? 'selected' : ''
         }`}
         style={{ paddingLeft: depth * 16 + 8 }}
         draggable={itemId !== 'root'}
@@ -141,7 +193,7 @@ function TreeNode({
           {item.name}
         </span>
         <span className="tree-actions">
-          {isFolder && (
+          {isFolder ? (
             <>
               <button
                 className="tree-btn"
@@ -159,11 +211,34 @@ function TreeNode({
                   e.stopPropagation()
                   fileInputRef.current?.click()
                 }}
-                title="Upload"
+                title="Upload to folder"
               >
                 ↑
               </button>
+              {itemId !== 'root' && (
+                <button
+                  className="tree-btn"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    exportFolder()
+                  }}
+                  title="Export as ZIP"
+                >
+                  📦
+                </button>
+              )}
             </>
+          ) : (
+            <button
+              className="tree-btn"
+              onClick={(e) => {
+                e.stopPropagation()
+                downloadFile()
+              }}
+              title="Download"
+            >
+              ↓
+            </button>
           )}
           {itemId !== 'root' && (
             <button
@@ -216,6 +291,8 @@ function TreeNode({
               depth={depth + 1}
               parentId={itemId}
               onSelectImage={onSelectImage}
+              onSelectBin={onSelectBin}
+              selectedRebuildBinId={selectedRebuildBinId}
               selectedImageId={selectedImageId}
             />
           ))}
@@ -233,7 +310,7 @@ function TreeNode({
   )
 }
 
-export default function Sidebar({ onSelectImage, selectedImageId, width }) {
+export default function Sidebar({ onSelectImage, onSelectBin, selectedImageId, selectedRebuildBinId, width }) {
   const { root, addFiles } = useFiles()
   const [dragOverRoot, setDragOverRoot] = useState(false)
 
@@ -257,7 +334,7 @@ export default function Sidebar({ onSelectImage, selectedImageId, width }) {
       const validFiles = Array.from(files).filter(
         (f) =>
           f.type.startsWith('image/') ||
-          /\.(zip|tar|gz|7z|rar)$/i.test(f.name),
+          /\.(zip|tar|gz|7z|rar|bin|mp4|h264|h265)$/i.test(f.name),
       )
       if (validFiles.length) {
         addFiles(root.id, validFiles)
@@ -281,6 +358,8 @@ export default function Sidebar({ onSelectImage, selectedImageId, width }) {
           itemId={root.id}
           parentId={null}
           onSelectImage={onSelectImage}
+          onSelectBin={onSelectBin}
+          selectedRebuildBinId={selectedRebuildBinId}
           selectedImageId={selectedImageId}
         />
       </div>

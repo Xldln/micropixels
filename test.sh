@@ -1,14 +1,14 @@
 
-#get models weights
+if [ -d "models" ] && [ "$(ls -A models 2>/dev/null)" ]; then
+    echo "models 文件夹已存在且不为空，跳过下载。"
+else
+    echo "models 文件夹不存在或为空，开始下载..."
+    mkdir -p models && cd models && wget https://yubinux.cn/tmp/pt/models.zip && unzip models.zip && rm models.zip && cd ..
+fi
 
-mkdir -p models && cd models && wget https://yubinux.cn/tmp/pt/models.zip && unzip models.zip && rm models.zip && cd ..
 
-
-
-cd /workspace/src/codec/entropy_coding/cpp_exts/mans && make 
-
-
-cd /workspace/src/codec/entropy_coding/cpp_exts/direct && make
+#cd /workspace/src/codec/entropy_coding/cpp_exts/mans && make 
+#cd /workspace/src/codec/entropy_coding/cpp_exts/direct && make
 
 
 python -m src.reco.coders.encoder test.png output.bin --set_target_bpp 100 --cfg cfg/tools_off.json cfg/profiles/high.json

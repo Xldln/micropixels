@@ -2,6 +2,8 @@ import { useState, useRef, useCallback } from 'react'
 import { useFiles } from '../context/FileContext'
 import './CompressPanel.css'
 
+const API_BASE = 'http://localhost:9000/micropixels'
+
 const TOOLS = [
   'ChromaShift', 'DependentRegions', 'ECThread8',
   'EFElinear', 'EFEnonlinear', 'EnhancementFilters',
@@ -12,11 +14,13 @@ const TOOLS = [
 const PROFILES = ['simple', 'base', 'high']
 
 export default function CompressPanel({ selectedFile, onSelectFile, compact }) {
-  const { root, getItem, getChildren, addResult, getResults } = useFiles()
-  const [quality, setQuality] = useState(75)
+  const { root, getItem, getChildren, addFiles, getResults, getCompressDir } = useFiles()
+  const [bppIdx, setBppIdx] = useState(2)
+
+  const BPP_VALUES = [12, 25, 50, 75, 100]
+  const BPP_LABELS = ['lowest', 'low', 'medium', 'high', 'highest']
   const [compressing, setCompressing] = useState(false)
   const [progress, setProgress] = useState(0)
-  const canvasRef = useRef(null)
   const compressResults = getResults('compress')
 
   const [profile, setProfile] = useState('base')
@@ -53,6 +57,15 @@ export default function CompressPanel({ selectedFile, onSelectFile, compact }) {
 
     if (!files.length) return
 
+    const cfgParts = []
+    if (toolsMode === 'all') cfgParts.push('cfg/tools_on.json')
+    else cfgParts.push('cfg/tools_off.json')
+    if (toolsMode === 'custom') {
+      selectedTools.forEach((t) => cfgParts.push(`cfg/tools/${t}.json`))
+    }
+    cfgParts.push(`cfg/profiles/${profile}.json`)
+    const cfgStr = cfgParts.join(';')
+
     setCompressing(true)
     setProgress(0)
 
@@ -61,9 +74,29 @@ export default function CompressPanel({ selectedFile, onSelectFile, compact }) {
       if (file.type !== 'image') continue
 
       try {
-        const blob = await compressImage(file.file || file, quality)
-        const name = file.name.replace(/\.\w+$/, `_c.jpg`)
-        addResult(name, blob, 'image', 'compress')
+        const formData = new FormData()
+        let blob
+        if (file.file) {
+          blob = file.file
+        } else if (file.blobUrl) {
+          const r = await fetch(file.blobUrl)
+          blob = await r.blob()
+        }
+        if (!blob) continue
+
+        formData.append('image', blob, file.name)
+        formData.append('bpp_idx', String(bppIdx))
+        if (cfgStr) formData.append('cfg', cfgStr)
+
+        setProgress(Math.round(((i + 1) / files.length) * 70))
+        const resp = await fetch(`${API_BASE}/compress`, { method: 'POST', body: formData })
+        if (!resp.ok) throw new Error(`Compress failed: ${resp.status}`)
+
+        const binBlob = await resp.blob()
+        const binName = file.name.replace(/\.\w+$/, '.bin')
+        const binFile = new File([binBlob], binName, { type: 'application/octet-stream' })
+        const compressDirId = getCompressDir()
+        addFiles(compressDirId, [binFile])
       } catch (err) {
         console.error(`Failed to compress ${file.name}:`, err)
       }
@@ -160,13 +193,13 @@ export default function CompressPanel({ selectedFile, onSelectFile, compact }) {
           <div className="section">
             <h3 className="section-title">Compress this image</h3>
             <div className="quality-control">
-              <label>Quality: {quality}%</label>
+              <label>BPP: {BPP_VALUES[bppIdx]} ({BPP_LABELS[bppIdx]})</label>
               <input
                 type="range"
-                min={1}
-                max={100}
-                value={quality}
-                onChange={(e) => setQuality(Number(e.target.value))}
+                min={0}
+                max={BPP_VALUES.length - 1}
+                value={bppIdx}
+                onChange={(e) => setBppIdx(Number(e.target.value))}
               />
             </div>
 
@@ -215,7 +248,6 @@ export default function CompressPanel({ selectedFile, onSelectFile, compact }) {
             </div>
           </div>
         </div>
-        <canvas ref={canvasRef} style={{ display: 'none' }} />
       </div>
     )
   }
@@ -253,13 +285,13 @@ export default function CompressPanel({ selectedFile, onSelectFile, compact }) {
         <div className="section">
           <h3 className="section-title">Compression Settings</h3>
           <div className="quality-control">
-            <label>Quality: {quality}%</label>
+            <label>BPP: {BPP_VALUES[bppIdx]} ({BPP_LABELS[bppIdx]})</label>
             <input
               type="range"
-              min={1}
-              max={100}
-              value={quality}
-              onChange={(e) => setQuality(Number(e.target.value))}
+              min={0}
+              max={BPP_VALUES.length - 1}
+              value={bppIdx}
+              onChange={(e) => setBppIdx(Number(e.target.value))}
             />
           </div>
 
@@ -308,41 +340,8 @@ export default function CompressPanel({ selectedFile, onSelectFile, compact }) {
           </div>
         </div>
       </div>
-      <canvas ref={canvasRef} style={{ display: 'none' }} />
     </div>
   )
-}
-
-function compressImage(file, quality) {
-  return new Promise((resolve, reject) => {
-    const img = new Image()
-    const url = file instanceof File ? URL.createObjectURL(file) : ''
-
-    img.onload = () => {
-      const canvas = document.createElement('canvas')
-      canvas.width = img.width
-      canvas.height = img.height
-      const ctx = canvas.getContext('2d')
-      ctx.drawImage(img, 0, 0)
-      canvas.toBlob(
-        (blob) => {
-          if (blob) resolve(blob)
-          else reject(new Error('Canvas toBlob failed'))
-        },
-        'image/jpeg',
-        quality / 100,
-      )
-      if (file instanceof File) URL.revokeObjectURL(url)
-    }
-    img.onerror = reject
-    if (file instanceof File) {
-      img.src = url
-    } else if (file.blobUrl) {
-      img.src = file.blobUrl
-    } else {
-      reject(new Error('No source'))
-    }
-  })
 }
 
 function formatSize(bytes) {
