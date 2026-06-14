@@ -101,28 +101,6 @@ python -m src.reco.coders.decoder output.bin rebuild_img.png
 
 ---
 
-## Architecture
-
-```
-┌─────────────────────────────────────────────────────┐
-│                    Host                              │
-│  ┌──────────────┐     ┌───────────────────────────┐ │
-│  │  React UI    │     │  Docker Container          │ │
-│  │  localhost:  │     │  ┌─────────────────────┐  │ │
-│  │  8999        │────▶│  │  FastAPI Backend    │  │ │
-│  │              │     │  │  localhost:9000     │  │ │
-│  └──────────────┘     │  │  ┌───────────────┐  │  │ │
-│                       │  │  │ JPEG AI Model  │  │  │ │
-│                       │  │  └───────────────┘  │  │ │
-│                       │  └─────────────────────┘  │ │
-│  ┌──────────────┐     └───────────────────────────┘ │
-│  │  loguru      │                                    │
-│  │  ./logs/     │     Backend logging system:        │
-│  │  app_*.log   │     - stdout/stderr captured      │
-│  └──────────────┘     - codec Logger() output       │
-│                          filtered & routed to file   │
-└─────────────────────────────────────────────────────┘
-```
 
 ### Key Features
 
