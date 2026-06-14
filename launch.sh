@@ -34,7 +34,9 @@ else
         -d \
         $IMAGE_NAME || exit 1
     echo "Container $CONTAINER_NAME created and running."
-    echo "Running test.sh for weight download and verification..."
+    echo "Running dl.sh for weight download..."
+    docker exec -it $CONTAINER_NAME bash dl.sh
+    echo "Running test.sh for verification..."
     docker exec -it $CONTAINER_NAME bash test.sh || exit 1
     echo "Test completed."
 fi
@@ -42,17 +44,33 @@ fi
 # Step 3: Start React frontend (host side)
 echo ""
 echo "=== React Frontend ==="
-if [ ! -d "node_modules" ]; then
-    echo "First time setup: installing npm dependencies..."
-    npm install || exit 1
+
+# Check if port 8999 is already in use
+if command -v ss &> /dev/null; then
+    ss -tlnp 2>/dev/null | grep -q ":8999 "
+    PORT_IN_USE=$?
+elif command -v lsof &> /dev/null; then
+    lsof -i :8999 2>/dev/null | grep -q LISTEN
+    PORT_IN_USE=$?
 else
-    echo "node_modules already exists, skipping npm install."
+    PORT_IN_USE=1
 fi
-echo "Starting React dev server on port 8999..." 
-echo "🚀 You can access the micropixels server at 👾 http://localhost:8999"
-npm run dev &
-REACT_PID=$!
-echo "React dev server started (PID: $REACT_PID)."
+
+if [ "$PORT_IN_USE" -eq 0 ]; then
+    echo "Port 8999 is already in use, React frontend appears to be running, skipping."
+else
+    if [ ! -d "node_modules" ]; then
+        echo "First time setup: installing npm dependencies..."
+        npm install || exit 1
+    else
+        echo "node_modules already exists, skipping npm install."
+    fi
+    echo "Starting React dev server on port 8999..."
+    echo "🚀 You can access the micropixels server at 👾 http://localhost:8999"
+    npm run dev &
+    REACT_PID=$!
+    echo "React dev server started (PID: $REACT_PID)."
+fi
 
 # Step 4: Exec into container and run main.py
 echo ""

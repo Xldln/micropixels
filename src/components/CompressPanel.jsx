@@ -4,6 +4,18 @@ import './CompressPanel.css'
 
 const API_BASE = 'http://localhost:9000/micropixels'
 
+const IMAGE_EXTS = new Set(['.png', '.jpg', '.jpeg', '.bmp', '.tiff', '.tif', '.webp'])
+const ACCEPTED_EXTS = new Set([...IMAGE_EXTS, '.zip', '.bin'])
+const INPUT_ACCEPT = '.png,.jpg,.jpeg,.bmp,.tiff,.tif,.webp,.zip,.bin'
+
+function fileTypeFromName(name) {
+  const ext = '.' + name.split('.').pop().toLowerCase()
+  if (ext === '.bin') return 'bin'
+  if (ext === '.zip') return 'zip'
+  if (IMAGE_EXTS.has(ext)) return 'image'
+  return 'file'
+}
+
 const TOOLS = [
   'ChromaShift', 'DependentRegions', 'ECThread8',
   'EFElinear', 'EFEnonlinear', 'EnhancementFilters',
@@ -14,15 +26,19 @@ const TOOLS = [
 const PROFILES = ['simple', 'base', 'high']
 
 export default function CompressPanel({ selectedFile, onSelectFile, compact }) {
-  const { root, getItem, getChildren, addFiles, getResults, getCompressDir } = useFiles()
+  const { root, getItem, getChildren, addFiles, getCompressDir } = useFiles()
+  const fileInputRef = useRef(null)
   const [bppIdx, setBppIdx] = useState(2)
+  const [maxWorkers, setMaxWorkers] = useState(5)
+  const [poolInitResult, setPoolInitResult] = useState(null)
+  const [poolIniting, setPoolIniting] = useState(false)
+  const [localFile, setLocalFile] = useState(null)
+  const [dragOver, setDragOver] = useState(false)
 
   const BPP_VALUES = [12, 25, 50, 75, 100]
   const BPP_LABELS = ['lowest', 'low', 'medium', 'high', 'highest']
   const [compressing, setCompressing] = useState(false)
   const [progress, setProgress] = useState(0)
-  const compressResults = getResults('compress')
-
   const [profile, setProfile] = useState('base')
   const [toolsMode, setToolsMode] = useState('off')
   const [selectedTools, setSelectedTools] = useState(new Set())
@@ -39,7 +55,7 @@ export default function CompressPanel({ selectedFile, onSelectFile, compact }) {
     const walk = (id) => {
       const children = getChildren(id)
       children.forEach((child) => {
-        if (child.type === 'image' && child.file) {
+        if (child.type !== 'folder' && child.file) {
           files.push(child)
         } else if (child.type === 'folder') {
           walk(child.id)
@@ -50,70 +66,151 @@ export default function CompressPanel({ selectedFile, onSelectFile, compact }) {
     return files
   }, [root.id, getChildren])
 
-  const handleCompress = async () => {
-    const files = selectedFile
-      ? [selectedFile]
-      : getAllFiles()
-
-    if (!files.length) return
-
-    const cfgParts = []
-    if (toolsMode === 'all') cfgParts.push('cfg/tools_on.json')
-    else cfgParts.push('cfg/tools_off.json')
-    if (toolsMode === 'custom') {
-      selectedTools.forEach((t) => cfgParts.push(`cfg/tools/${t}.json`))
+  const handleUpload = (e) => {
+    const files = Array.from(e.target.files || [])
+    const accepted = files.filter((f) => {
+      const ext = '.' + f.name.split('.').pop().toLowerCase()
+      return ACCEPTED_EXTS.has(ext)
+    })
+    if (accepted.length > 0) {
+      const f = accepted[0]
+      addFiles('root', [f])
+      setLocalFile({
+        id: `local-${Date.now()}`,
+        name: f.name,
+        type: fileTypeFromName(f.name),
+        file: f,
+        blobUrl: URL.createObjectURL(f),
+      })
+      onSelectFile(null)
     }
-    cfgParts.push(`cfg/profiles/${profile}.json`)
+    e.target.value = ''
+  }
+
+  const handleDragOver = (e) => {
+    e.preventDefault()
+    e.stopPropagation()
+    setDragOver(true)
+  }
+
+  const handleDragLeave = (e) => {
+    e.preventDefault()
+    e.stopPropagation()
+    setDragOver(false)
+  }
+
+  const handleDrop = (e) => {
+    e.preventDefault()
+    e.stopPropagation()
+    setDragOver(false)
+    const dropped = Array.from(e.dataTransfer.files || [])
+    const accepted = dropped.filter((f) => {
+      const ext = '.' + f.name.split('.').pop().toLowerCase()
+      return ACCEPTED_EXTS.has(ext)
+    })
+    if (accepted.length > 0) {
+      const f = accepted[0]
+      addFiles('root', [f])
+      setLocalFile({
+        id: `local-${Date.now()}`,
+        name: f.name,
+        type: fileTypeFromName(f.name),
+        file: f,
+        blobUrl: URL.createObjectURL(f),
+      })
+      onSelectFile(null)
+    }
+  }
+
+  const handlePoolInit = async () => {
+    setPoolIniting(true)
+    setPoolInitResult(null)
+    try {
+      const formData = new FormData()
+      formData.append('max_workers', String(maxWorkers))
+      const cfgParts = _buildCfgParts()
+      if (cfgParts.length) formData.append('cfg', cfgParts.join(';'))
+
+      const resp = await fetch(`${API_BASE}/pool/init`, { method: 'POST', body: formData })
+      const data = await resp.json()
+      setPoolInitResult(data)
+    } catch (err) {
+      setPoolInitResult({ success: false, errors: [err.message] })
+    }
+    setPoolIniting(false)
+  }
+
+  const _buildCfgParts = () => {
+    const parts = []
+    parts.push(toolsMode === 'all' ? 'cfg/tools_on.json' : 'cfg/tools_off.json')
+    if (toolsMode === 'custom') {
+      selectedTools.forEach((t) => parts.push(`cfg/tools/${t}.json`))
+    }
+    parts.push(`cfg/profiles/${profile}.json`)
+    return parts
+  }
+
+  const handleCompress = async () => {
+    const file = localFile || selectedFile
+    if (!file) return
+
+    const cfgParts = _buildCfgParts()
     const cfgStr = cfgParts.join(';')
+    const isZip = file.name?.toLowerCase().endsWith('.zip')
 
     setCompressing(true)
     setProgress(0)
 
-    for (let i = 0; i < files.length; i++) {
-      const file = files[i]
-      if (file.type !== 'image') continue
+    try {
+      const formData = new FormData()
+      let blob
+      if (file.file) {
+        blob = file.file
+      } else if (file.blobUrl) {
+        const r = await fetch(file.blobUrl)
+        blob = await r.blob()
+      }
+      if (!blob) return
 
-      try {
-        const formData = new FormData()
-        let blob
-        if (file.file) {
-          blob = file.file
-        } else if (file.blobUrl) {
-          const r = await fetch(file.blobUrl)
-          blob = await r.blob()
-        }
-        if (!blob) continue
+      formData.append(isZip ? 'file' : 'image', blob, file.name)
+      formData.append('bpp_idx', String(bppIdx))
+      if (cfgStr) formData.append('cfg', cfgStr)
 
-        formData.append('image', blob, file.name)
-        formData.append('bpp_idx', String(bppIdx))
-        if (cfgStr) formData.append('cfg', cfgStr)
-
-        setProgress(Math.round(((i + 1) / files.length) * 70))
-        const resp = await fetch(`${API_BASE}/compress`, { method: 'POST', body: formData })
-        if (!resp.ok) throw new Error(`Compress failed: ${resp.status}`)
-
-        const binBlob = await resp.blob()
-        const binName = file.name.replace(/\.\w+$/, '.bin')
-        const binFile = new File([binBlob], binName, { type: 'application/octet-stream' })
-        const compressDirId = getCompressDir()
-        addFiles(compressDirId, [binFile])
-      } catch (err) {
-        console.error(`Failed to compress ${file.name}:`, err)
+      const endpoint = isZip ? 'compress_zip' : 'compress'
+      const taskId = isZip ? `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}` : ''
+      if (isZip) {
+        formData.append('task_id', taskId)
+        formData.append('max_workers', String(maxWorkers))
+        window.dispatchEvent(new CustomEvent('micropixels:task', { detail: { taskId } }))
       }
 
-      setProgress(Math.round(((i + 1) / files.length) * 100))
-      await sleep(50)
+      setProgress(isZip ? 5 : 30)
+      const resp = await fetch(`${API_BASE}/${endpoint}`, { method: 'POST', body: formData })
+      if (!resp.ok) throw new Error(`Compress failed: ${resp.status}`)
+
+      setProgress(isZip ? 100 : 70)
+      const resultBlob = await resp.blob()
+      const isZipOut = isZip || resp.headers.get('content-type')?.includes('zip')
+
+      if (isZipOut) {
+        const resultName = file.name.replace(/\.\w+$/i, '_compressed.zip')
+        const resultFile = new File([resultBlob], resultName, { type: 'application/zip' })
+        addFiles(getCompressDir(), [resultFile])
+      } else {
+        const binBlob = resultBlob
+        const binName = file.name.replace(/\.\w+$/, '.bin')
+        const binFile = new File([binBlob], binName, { type: 'application/octet-stream' })
+        addFiles(getCompressDir(), [binFile])
+      }
+      setProgress(100)
+      await sleep(300)
+    } catch (err) {
+      console.error(`Compress failed:`, err)
+      alert(`Compress failed: ${err.message}`)
     }
 
     setCompressing(false)
     setProgress(0)
-  }
-
-  const handleDownload = (item) => {
-    const a = document.createElement('a')
-    a.href = item.blobUrl
-    a.download = item.name
-    a.click()
   }
 
   const fileList = getAllFiles()
@@ -183,6 +280,34 @@ export default function CompressPanel({ selectedFile, onSelectFile, compact }) {
           {' '}cfg/profiles/{profile}.json
         </code>
       </div>
+
+      <div className="cfg-group">
+        <label className="cfg-label">Pool Workers</label>
+        <div className="cfg-pool-row">
+          <input
+            type="number"
+            className="cfg-pool-input"
+            min={1}
+            max={20}
+            value={maxWorkers}
+            onChange={(e) => setMaxWorkers(Number(e.target.value))}
+          />
+          <button
+            className="btn btn-sm cfg-pool-btn"
+            onClick={handlePoolInit}
+            disabled={poolIniting}
+          >
+            {poolIniting ? 'Initing…' : 'Init Pool'}
+          </button>
+        </div>
+        {poolInitResult && (
+          <p className={poolInitResult.success ? 'pool-msg-ok' : 'pool-msg-err'}>
+            {poolInitResult.success
+              ? `✓ ${poolInitResult.workers_ready}/${poolInitResult.workers_requested} workers ready (${poolInitResult.warmup_seconds}s)`
+              : `✗ ${poolInitResult.errors?.[0] || 'failed'}`}
+          </p>
+        )}
+      </div>
     </div>
   )
 
@@ -218,35 +343,6 @@ export default function CompressPanel({ selectedFile, onSelectFile, compact }) {
           </div>
 
           <CfgSection />
-
-          <div className="section">
-            <h3 className="section-title">
-              Compressed Results ({compressResults.length})
-            </h3>
-            <div className="result-list">
-              {compressResults.length === 0 ? (
-                <p className="empty-hint">No results yet</p>
-              ) : (
-                compressResults.map((r) => (
-                  <div key={r.id} className="result-item">
-                    <span className="file-icon">📦</span>
-                    <span className="file-name" title={r.name}>
-                      {r.name}
-                    </span>
-                    <span className="file-badge">
-                      {formatSize(r.blob?.size)}
-                    </span>
-                    <button
-                      className="btn btn-sm"
-                      onClick={() => handleDownload(r)}
-                    >
-                      ↓
-                    </button>
-                  </div>
-                ))
-              )}
-            </div>
-          </div>
         </div>
       </div>
     )
@@ -256,20 +352,73 @@ export default function CompressPanel({ selectedFile, onSelectFile, compact }) {
     <div className="panel">
       <div className="panel-body">
         <div className="section">
-          <h3 className="section-title">Source Files</h3>
+          <h3 className="section-title">Source File</h3>
+          <div className="file-list">
+            <div
+              className={`file-list-dropzone ${dragOver ? 'dropzone-active' : ''}`}
+              onDragOver={handleDragOver}
+              onDragLeave={handleDragLeave}
+              onDrop={handleDrop}
+              onClick={() => fileInputRef.current?.click()}
+            >
+              <span className="dropzone-icon">📥</span>
+              <span className="dropzone-text">
+                Click or drag a file here
+              </span>
+            </div>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept={INPUT_ACCEPT}
+              style={{ display: 'none' }}
+              onChange={handleUpload}
+            />
+
+            {localFile && (
+              <div className="file-item selected" style={{ borderLeft: '3px solid #654ea3' }}>
+                <span className="file-icon">📤</span>
+                <span className="file-name">{localFile.name}</span>
+                <span className="file-badge">{formatSize(localFile.file?.size)}</span>
+                <button
+                  className="btn btn-sm"
+                  onClick={(e) => { e.stopPropagation(); setLocalFile(null) }}
+                  style={{ marginLeft: 'auto' }}
+                >
+                  ✕
+                </button>
+              </div>
+            )}
+
+            {!localFile && !selectedFile && (
+              <p className="empty-hint">
+                Upload a file or click one from the workspace below
+              </p>
+            )}
+
+            {selectedFile && !localFile && (
+              <div className="file-item selected">
+                <span className="file-icon">
+                  {selectedFile.type === 'image' ? '🖼️' : selectedFile.type === 'zip' ? '📦' : '📄'}
+                </span>
+                <span className="file-name">{selectedFile.name}</span>
+                <span className="file-badge">{formatSize(selectedFile.file?.size)}</span>
+              </div>
+            )}
+          </div>
+
+          <h3 className="section-title" style={{ marginTop: 16 }}>Workspace</h3>
           <div className="file-list">
             {fileList.length === 0 ? (
-              <p className="empty-hint">
-                Upload images to the workspace first
-              </p>
+              <p className="empty-hint">No files yet</p>
             ) : (
               fileList.map((f) => (
                 <div
                   key={f.id}
-                  className={`file-item ${selectedFile?.id === f.id ? 'selected' : ''}`}
-                  onClick={() =>
+                  className={`file-item ${selectedFile?.id === f.id && !localFile ? 'selected' : ''}`}
+                  onClick={() => {
+                    setLocalFile(null)
                     onSelectFile(selectedFile?.id === f.id ? null : f)
-                  }
+                  }}
                 >
                   <span className="file-icon">
                     {f.type === 'image' ? '🖼️' : '📄'}
@@ -310,35 +459,6 @@ export default function CompressPanel({ selectedFile, onSelectFile, compact }) {
         </div>
 
         <CfgSection />
-
-        <div className="section">
-          <h3 className="section-title">
-            Results ({compressResults.length})
-          </h3>
-          <div className="result-list">
-            {compressResults.length === 0 ? (
-              <p className="empty-hint">No results yet</p>
-            ) : (
-              compressResults.map((r) => (
-                <div key={r.id} className="result-item">
-                  <span className="file-icon">📦</span>
-                  <span className="file-name" title={r.name}>
-                    {r.name}
-                  </span>
-                  <span className="file-badge">
-                    {formatSize(r.blob?.size)}
-                  </span>
-                  <button
-                    className="btn btn-sm"
-                    onClick={() => handleDownload(r)}
-                  >
-                    ↓
-                  </button>
-                </div>
-              ))
-            )}
-          </div>
-        </div>
       </div>
     </div>
   )

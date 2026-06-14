@@ -2,7 +2,7 @@
   border-top: 1px solid rgba(0, 0, 0, 0.06);
   display: flex;
   flex-direction: column;
-  height: 220px;
+  height: 350px;
   flex-shrink: 0;
   background: rgba(255, 255, 255, 0.35);
   backdrop-filter: blur(8px);
@@ -133,4 +133,122 @@
 .log-info .log-text {
   color: #047857;
   font-weight: 700;
+}
+
+/* ── Task Progress Box ──────────────────────────────────────────── */
+.progress-box {
+  border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+  padding: 6px 8px;
+}
+
+.progress-box-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 6px;
+}
+
+.progress-box-title {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  color: rgba(0, 0, 0, 0.4);
+}
+
+.progress-box-status {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  padding: 1px 6px;
+  border-radius: 6px;
+}
+
+.progress-box-status.processing {
+  color: #654ea3;
+  background: rgba(101, 78, 163, 0.08);
+}
+
+.progress-box-status.done {
+  color: #2e7d32;
+  background: rgba(46, 125, 50, 0.08);
+}
+
+.progress-box-status.failed {
+  color: #c62828;
+  background: rgba(198, 40, 40, 0.08);
+}
+
+.progress-box-status.unknown {
+  color: #999;
+  background: rgba(0, 0, 0, 0.04);
+}
+
+.progress-box-body {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.progress-box-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.progress-box-input {
+  flex: 1;
+  padding: 4px 8px;
+  border: 1px solid rgba(0, 0, 0, 0.1);
+  border-radius: 6px;
+  font-size: 11px;
+  font-family: ui-monospace, monospace;
+  background: rgba(255, 255, 255, 0.7);
+  min-width: 0;
+}
+
+.progress-box-input:focus {
+  outline: none;
+  border-color: #654ea3;
+}
+
+.progress-box-info {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 10px;
+  font-family: ui-monospace, monospace;
+  color: rgba(0, 0, 0, 0.55);
+}
+
+.progress-box-id {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.progress-box-count {
+  flex-shrink: 0;
+}
+
+.progress-box-pct {
+  flex-shrink: 0;
+  font-weight: 700;
+  color: #654ea3;
+}
+
+.progress-box-bar {
+  height: 4px;
+  background: rgba(0, 0, 0, 0.06);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.progress-box-fill {
+  height: 100%;
+  background: linear-gradient(135deg, #654ea3, #7b5ea7);
+  border-radius: 2px;
+  transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }

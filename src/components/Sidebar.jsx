@@ -40,6 +40,8 @@ function TreeNode({
       onSelectBin?.(item)
     } else if (isFolder) {
       setExpanded(!expanded)
+    } else {
+      onSelectImage(item)
     }
   }
 

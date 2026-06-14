@@ -1,31 +1,51 @@
-import { useState, useRef } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { useFiles } from '../context/FileContext'
 import './CompressPanel.css'
 
 const API_BASE = 'http://localhost:9000/micropixels'
 
-export default function RebuildPanel({ compact, selectedBinId, onPreview, onClearBin }) {
+const ACCEPT_EXTS = new Set(['.bin', '.zip', '.png', '.jpg', '.jpeg', '.bmp', '.tiff', '.tif', '.webp'])
+const INPUT_ACCEPT = '.bin,.zip,.png,.jpg,.jpeg,.bmp,.tiff,.tif,.webp'
+
+function fileTypeFromName(name) {
+  const ext = '.' + name.split('.').pop().toLowerCase()
+  if (ext === '.bin') return 'bin'
+  if (ext === '.zip') return 'zip'
+  if (['.png', '.jpg', '.jpeg', '.bmp', '.tiff', '.tif', '.webp'].includes(ext)) return 'image'
+  return 'file'
+}
+
+export default function RebuildPanel({ compact, selectedBinId, onPreview, onClearBin, sidebarFile }) {
   const { getItem, addFiles, getRebuildDir } = useFiles()
-  const selectedFile = selectedBinId ? getItem(selectedBinId) : null
+  const selectedBinFile = selectedBinId ? getItem(selectedBinId) : null
   const [rebuilding, setRebuilding] = useState(false)
   const [progress, setProgress] = useState(0)
   const [localFile, setLocalFile] = useState(null)
   const fileInputRef = useRef(null)
 
+  const workspaceFile = sidebarFile || selectedBinFile
+
+  useEffect(() => {
+    if (workspaceFile) setLocalFile(null)
+  }, [workspaceFile])
+
   const handleUpload = (e) => {
     const files = Array.from(e.target.files || [])
-    const bins = files.filter((f) => f.name.toLowerCase().endsWith('.bin'))
-    if (bins.length > 0) {
-      addFiles('root', bins)
+    const accepted = files.filter((f) => {
+      const ext = '.' + f.name.split('.').pop().toLowerCase()
+      return ACCEPT_EXTS.has(ext)
+    })
+    if (accepted.length > 0) {
+      addFiles('root', accepted)
       const item = {
         id: `local-${Date.now()}`,
-        name: bins[0].name,
-        type: 'file',
-        file: bins[0],
-        blobUrl: URL.createObjectURL(bins[0]),
+        name: accepted[0].name,
+        type: fileTypeFromName(accepted[0].name),
+        file: accepted[0],
+        blobUrl: URL.createObjectURL(accepted[0]),
       }
       setLocalFile(item)
-      if (selectedFile) onClearBin()
+      if (workspaceFile) onClearBin()
     }
     e.target.value = ''
   }
@@ -38,26 +58,31 @@ export default function RebuildPanel({ compact, selectedBinId, onPreview, onClea
   const handleDrop = (e) => {
     e.preventDefault()
     e.stopPropagation()
-    const files = Array.from(e.dataTransfer.files || [])
-    const bins = files.filter((f) => f.name.toLowerCase().endsWith('.bin'))
-    if (bins.length > 0) {
-      addFiles('root', bins)
+    const dropped = Array.from(e.dataTransfer.files || [])
+    const accepted = dropped.filter((f) => {
+      const ext = '.' + f.name.split('.').pop().toLowerCase()
+      return ACCEPT_EXTS.has(ext)
+    })
+    if (accepted.length > 0) {
+      addFiles('root', accepted)
       const item = {
         id: `local-${Date.now()}`,
-        name: bins[0].name,
-        type: 'file',
-        file: bins[0],
-        blobUrl: URL.createObjectURL(bins[0]),
+        name: accepted[0].name,
+        type: fileTypeFromName(accepted[0].name),
+        file: accepted[0],
+        blobUrl: URL.createObjectURL(accepted[0]),
       }
       setLocalFile(item)
-      if (selectedFile) onClearBin()
+      if (workspaceFile) onClearBin()
     }
   }
 
-  const activeFile = selectedFile || localFile
+  const activeFile = localFile || workspaceFile
 
   const handleRebuild = async () => {
     if (!activeFile) return
+    const isZip = activeFile.name?.toLowerCase().endsWith('.zip')
+
     setRebuilding(true)
     setProgress(0)
 
@@ -67,39 +92,54 @@ export default function RebuildPanel({ compact, selectedBinId, onPreview, onClea
       if (activeFile.file) {
         blob = activeFile.file
       } else if (activeFile.blobUrl) {
-        const resp = await fetch(activeFile.blobUrl)
-        blob = await resp.blob()
-      } else {
-        throw new Error('No source data')
+        const r = await fetch(activeFile.blobUrl)
+        blob = await r.blob()
       }
-      formData.append('bin', blob, activeFile.name)
+      if (!blob) throw new Error('No source data')
 
-      setProgress(30)
-      const resp = await fetch(`${API_BASE}/rebuild`, { method: 'POST', body: formData })
-      if (!resp.ok) throw new Error(`Rebuild failed: ${resp.status}`)
+      const endpoint = isZip ? 'rebuild_zip' : 'rebuild'
+      formData.append(isZip ? 'file' : 'bin', blob, activeFile.name)
+      if (isZip) {
+        const tid = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`
+        formData.append('task_id', tid)
+        window.dispatchEvent(new CustomEvent('micropixels:task', { detail: { taskId: tid } }))
+      }
 
-      setProgress(70)
+      setProgress(isZip ? 5 : 30)
+      const url = `${API_BASE}/${endpoint}`
+      const resp = await fetch(url, { method: 'POST', body: formData })
+      if (!resp.ok) {
+        const text = await resp.text().catch(() => '')
+        throw new Error(`Rebuild failed: ${resp.status} ${text}`)
+      }
+
       const resultBlob = await resp.blob()
-      const resultName = activeFile.name.replace(/\.bin$/i, '_reconstructed.png')
+      const isZipOut = isZip || (resp.headers.get('content-type') || '').includes('zip')
 
-      const rebuildDirId = getRebuildDir()
-      const resultFile = new File([resultBlob], resultName, { type: 'image/png' })
-      addFiles(rebuildDirId, [resultFile])
+      const resultName = isZipOut
+        ? activeFile.name.replace(/\.\w+$/i, '_reconstructed.zip')
+        : activeFile.name.replace(/\.bin$/i, '_reconstructed.png')
 
-      setProgress(100)
+      const resultFile = new File(
+        [resultBlob],
+        resultName,
+        { type: isZipOut ? 'application/zip' : 'image/png' },
+      )
+      addFiles(getRebuildDir(), [resultFile])
 
-      const previewItem = {
-        id: `rebuild-result-${Date.now()}`,
-        name: resultName,
-        type: 'image',
-        blobUrl: URL.createObjectURL(resultBlob),
-        file: resultFile,
+      if (!isZipOut) {
+        onPreview({
+          id: `rebuild-result-${Date.now()}`,
+          name: resultName,
+          type: 'image',
+          blobUrl: URL.createObjectURL(resultBlob),
+          file: resultFile,
+        })
       }
-      onPreview(previewItem)
-
+      setProgress(100)
       await sleep(300)
     } catch (err) {
-      console.error('Rebuild error:', err)
+      console.error('[rebuild] error:', err)
       alert(`Rebuild failed: ${err.message}`)
     }
 
@@ -120,13 +160,13 @@ export default function RebuildPanel({ compact, selectedBinId, onPreview, onClea
           >
             <span className="dropzone-icon">📥</span>
             <span className="dropzone-text">
-              Click or drag .bin files here
+              Click or drag .zip / .bin / images here
             </span>
           </div>
           <input
             ref={fileInputRef}
             type="file"
-            accept=".bin"
+            accept={INPUT_ACCEPT}
             multiple
             onChange={handleUpload}
             style={{ display: 'none' }}
@@ -164,15 +204,6 @@ export default function RebuildPanel({ compact, selectedBinId, onPreview, onClea
             <div className="progress-fill" style={{ width: `${progress}%` }} />
           </div>
         )}
-      </div>
-
-      <div className="section">
-        <h3 className="section-title">Rebuild History</h3>
-        <div className="result-list">
-          <p className="empty-hint">
-            Results saved to Workspace &gt; RebuildResult folder
-          </p>
-        </div>
       </div>
     </div>
   )

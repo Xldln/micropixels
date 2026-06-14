@@ -37,7 +37,9 @@ if ($ctr) {
         $IMAGE_NAME
     if ($LASTEXITCODE -ne 0) { exit 1 }
     Write-Host "Container $CONTAINER_NAME created and running."
-    Write-Host "Running test.sh for weight download and verification..."
+    Write-Host "Running dl.sh for weight download..."
+    docker exec -it $CONTAINER_NAME bash dl.sh
+    Write-Host "Running test.sh for verification..."
     docker exec -it $CONTAINER_NAME bash test.sh
     if ($LASTEXITCODE -ne 0) { exit 1 }
     Write-Host "Test completed."
@@ -46,21 +48,29 @@ if ($ctr) {
 # Step 3: Start React frontend (host side)
 Write-Host ""
 Write-Host "=== React Frontend ==="
-if (-not (Test-Path "node_modules")) {
-    Write-Host "First time setup: installing npm dependencies..."
-    npm install
-    if ($LASTEXITCODE -ne 0) { exit 1 }
+
+# Check if port 8999 is already in use
+$portInUse = $null -ne (Get-NetTCPConnection -LocalPort 8999 -ErrorAction SilentlyContinue | Where-Object State -eq Listen)
+
+if ($portInUse) {
+    Write-Host "Port 8999 is already in use, React frontend appears to be running, skipping."
 } else {
-    Write-Host "node_modules already exists, skipping npm install."
+    if (-not (Test-Path "node_modules")) {
+        Write-Host "First time setup: installing npm dependencies..."
+        npm install
+        if ($LASTEXITCODE -ne 0) { exit 1 }
+    } else {
+        Write-Host "node_modules already exists, skipping npm install."
+    }
+    Write-Host "Starting React dev server on port 8999..."
+    Write-Host "🚀 You can access the micropixels server at 👾 http://localhost:8999"
+    $reactJob = Start-Job -Name "ReactDevServer" -ArgumentList $PWD -ScriptBlock {
+        param($dir)
+        Set-Location $dir
+        npm run dev
+    }
+    Write-Host "React dev server started (Job ID: $($reactJob.Id))."
 }
-Write-Host "Starting React dev server on port 8999..."
-Write-Host "🚀 You can access the micropixels server at 👾 http://localhost:8999"
-$reactJob = Start-Job -Name "ReactDevServer" -ArgumentList $PWD -ScriptBlock {
-    param($dir)
-    Set-Location $dir
-    npm run dev
-}
-Write-Host "React dev server started (Job ID: $($reactJob.Id))."
 
 # Step 4: Exec into container and run main.py
 Write-Host ""

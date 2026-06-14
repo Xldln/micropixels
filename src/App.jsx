@@ -29,6 +29,7 @@ function AppInner() {
 
   const handleSelectBin = useCallback((item) => {
     setSelectedRebuildBinId(item.id)
+    setSelectedImage(null)
     setActiveTab('rebuild')
   }, [])
 
@@ -112,7 +113,8 @@ function AppInner() {
                   <RebuildPanel
                     compact
                     selectedBinId={selectedRebuildBinId}
-                    onClearBin={() => setSelectedRebuildBinId(null)}
+                    sidebarFile={imageItem && imageItem.type !== 'image' ? imageItem : null}
+                    onClearBin={() => { setSelectedRebuildBinId(null); setSelectedImage(null) }}
                     onPreview={setSelectedImage}
                   />
                 )}
@@ -120,13 +122,14 @@ function AppInner() {
             ) : (
               activeTab === 'compress' ? (
                 <CompressPanel
-                  selectedFile={null}
+                  selectedFile={imageItem}
                   onSelectFile={setSelectedImage}
                 />
               ) : (
                 <RebuildPanel
                   selectedBinId={selectedRebuildBinId}
-                  onClearBin={() => setSelectedRebuildBinId(null)}
+                  sidebarFile={imageItem && imageItem.type !== 'image' ? imageItem : null}
+                  onClearBin={() => { setSelectedRebuildBinId(null); setSelectedImage(null) }}
                   onPreview={setSelectedImage}
                 />
               )

@@ -19,6 +19,68 @@ export default function LogPanel() {
   const bottomRef = useRef(null)
   const containerRef = useRef(null)
 
+  // ── progress polling ────────────────────────────────────────────────
+  const [taskId, setTaskId] = useState('')
+  const [taskProgress, setTaskProgress] = useState(null)
+  const pollRef = useRef(null)
+
+  const fetchProgress = useCallback(async (tid) => {
+    try {
+      const res = await fetch(`${API_BASE}/progress/${tid}`)
+      if (!res.ok) {
+        if (res.status === 404) {
+          setTaskProgress((p) => p ? { ...p, status: 'unknown' } : null)
+        }
+        return
+      }
+      const data = await res.json()
+      setTaskProgress(data)
+      if (data.status === 'done' || data.status === 'failed') {
+        clearInterval(pollRef.current)
+        pollRef.current = null
+      }
+    } catch {
+      // backend not running
+    }
+  }, [])
+
+  const startPolling = useCallback((tid) => {
+    setTaskId(tid)
+    setTaskProgress(null)
+    if (pollRef.current) clearInterval(pollRef.current)
+    fetchProgress(tid)
+    pollRef.current = setInterval(() => fetchProgress(tid), 1500)
+  }, [fetchProgress])
+
+  const handlePoll = () => {
+    const tid = taskId.trim()
+    if (tid) startPolling(tid)
+  }
+
+  const stopPolling = () => {
+    if (pollRef.current) {
+      clearInterval(pollRef.current)
+      pollRef.current = null
+    }
+    setTaskProgress(null)
+  }
+
+  // Listen for external task-start events from CompressPanel / RebuildPanel
+  useEffect(() => {
+    const handler = (e) => {
+      if (e.detail?.taskId) startPolling(e.detail.taskId)
+    }
+    window.addEventListener('micropixels:task', handler)
+    return () => window.removeEventListener('micropixels:task', handler)
+  }, [startPolling])
+
+  useEffect(() => {
+    return () => {
+      if (pollRef.current) clearInterval(pollRef.current)
+    }
+  }, [])
+
+  // ── logs ─────────────────────────────────────────────────────────────
   const fetchLogs = useCallback(async () => {
     try {
       const res = await fetch(`${API_BASE}/logs?offset=${offsetRef.current}`)
@@ -52,8 +114,59 @@ export default function LogPanel() {
     offsetRef.current = 0
   }
 
+  const pct = taskProgress?.percent ?? 0
+
   return (
     <div className="log-panel">
+      {/* ── progress box ──────────────────────────────────────────── */}
+      <div className="progress-box">
+        <div className="progress-box-header">
+          <span className="progress-box-title">Task Progress</span>
+          {taskProgress && (
+            <span className={`progress-box-status ${taskProgress.status}`}>
+              {taskProgress.status}
+            </span>
+          )}
+        </div>
+        <div className="progress-box-body">
+          <div className="progress-box-row">
+            <input
+              className="progress-box-input"
+              placeholder="task_id"
+              value={taskId}
+              onChange={(e) => setTaskId(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && handlePoll()}
+            />
+            <button className="log-btn" onClick={handlePoll} title="Poll progress">
+              ▶
+            </button>
+            {taskProgress && (
+              <button className="log-btn" onClick={stopPolling} title="Stop">
+                ⏹
+              </button>
+            )}
+          </div>
+
+          {taskProgress && (
+            <div className="progress-box-info">
+              <span className="progress-box-id">ID: {taskProgress.task_id}</span>
+              <span className="progress-box-count">
+                {taskProgress.completed} / {taskProgress.total}
+              </span>
+              <span className="progress-box-pct">{pct}%</span>
+            </div>
+          )}
+
+          <div className="progress-box-bar">
+            <div
+              className="progress-box-fill"
+              style={{ width: `${pct}%` }}
+            />
+          </div>
+        </div>
+      </div>
+
+      {/* ── logs ──────────────────────────────────────────────────── */}
       <div className="log-header">
         <span className="log-title">Logs</span>
         <div className="log-header-actions">

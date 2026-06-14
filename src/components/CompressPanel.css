@@ -358,3 +358,59 @@
   color: rgba(0, 0, 0, 0.5);
   font-weight: 600;
 }
+
+.file-list-divider {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  color: rgba(0, 0, 0, 0.35);
+  padding: 8px 12px 4px;
+  border-top: 1px solid rgba(0, 0, 0, 0.06);
+  margin-top: 4px;
+}
+
+.cfg-pool-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 6px;
+}
+
+.cfg-pool-input {
+  width: 80px;
+  padding: 7px 10px;
+  border: 1px solid rgba(0, 0, 0, 0.12);
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  font-family: ui-monospace, monospace;
+  text-align: center;
+  background: rgba(255, 255, 255, 0.75);
+  transition: border-color 0.15s;
+}
+
+.cfg-pool-input:focus {
+  outline: none;
+  border-color: #654ea3;
+  box-shadow: 0 0 0 3px rgba(101, 78, 163, 0.1);
+}
+
+.cfg-pool-btn {
+  padding: 7px 16px;
+  font-size: 12px;
+}
+
+.pool-msg-ok {
+  margin: 8px 0 0;
+  font-size: 12px;
+  color: #2e7d32;
+  font-weight: 600;
+}
+
+.pool-msg-err {
+  margin: 8px 0 0;
+  font-size: 12px;
+  color: #c62828;
+  font-weight: 600;
+}
