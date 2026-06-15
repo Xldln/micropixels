@@ -22,7 +22,7 @@ RUN apt-get update && \
     ln -sf /usr/bin/python3.7-config /usr/bin/python3-config && \
     wget https://bootstrap.pypa.io/pip/3.7/get-pip.py -O /tmp/get-pip.py && \
     python3.7 /tmp/get-pip.py && \
-    python3.7 -m pip install --upgrade pip setuptools wheel
+    python3.7 -m pip install --upgrade pip==24.0 setuptools==59.6.0 wheel
 
 # Install Python dependencies
 COPY requirements.txt /tmp/requirements.txt
