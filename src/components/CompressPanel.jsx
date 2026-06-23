@@ -1,8 +1,7 @@
 import { useState, useRef, useCallback } from 'react'
 import { useFiles } from '../context/FileContext'
 import './CompressPanel.css'
-
-const API_BASE = 'http://localhost:9000/micropixels'
+import API_BASE from '../config'
 
 const IMAGE_EXTS = new Set(['.png', '.jpg', '.jpeg', '.bmp', '.tiff', '.tif', '.webp'])
 const ACCEPTED_EXTS = new Set([...IMAGE_EXTS, '.zip', '.bin'])

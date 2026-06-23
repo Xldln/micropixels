@@ -15,6 +15,7 @@ from typing import Optional, List, Tuple
 from fastapi import APIRouter, UploadFile, File, Form, HTTPException, Query
 from fastapi.responses import StreamingResponse, JSONResponse
 from loguru import logger
+from PIL import Image
 
 from src.reco.coders.micropixels import MicroPixels
 
@@ -213,6 +214,8 @@ async def compress_micropixels(
         with open(input_path, "wb") as f:
             f.write(content)
 
+        png_input_path = _ensure_png(input_path)
+
         logger.info(f"Compressing {image.filename} ({len(content)} bytes), bpp_idx={bpp_idx}")
 
         cfg_args = []
@@ -222,7 +225,7 @@ async def compress_micropixels(
         mp = get_micropixels(encoder_cmd_args=cfg_args)
 
         mp.encoder.set_target_bpp_idx(bpp_idx)
-        mp.encode_stream({"input_path": input_path, "bin_path": bin_path})
+        mp.encode_stream({"input_path": png_input_path, "bin_path": bin_path})
 
         with open(bin_path, "rb") as f:
             bin_data = f.read()
@@ -320,6 +323,21 @@ async def get_logs(offset: int = Query(0, ge=0)):
 _IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".bmp", ".tiff", ".tif", ".webp"}
 
 
+def _ensure_png(input_path: str) -> str:
+    """Convert an image to PNG if it's not already PNG. Returns the path to the PNG file."""
+    img = Image.open(input_path)
+    if img.format == "PNG":
+        return input_path
+    png_path = os.path.join(os.path.dirname(input_path), Path(input_path).stem + "_converted.png")
+    if img.mode in ("RGBA", "P", "PA"):
+        img = img.convert("RGBA")
+    else:
+        img = img.convert("RGB")
+    img.save(png_path, "PNG")
+    logger.info(f"Converted {Path(input_path).name} ({img.size}) to PNG")
+    return png_path
+
+
 def _compress_single(params: dict) -> tuple:
     """Thread worker: compress one image → (relpath, bin_data).
 
@@ -331,9 +349,11 @@ def _compress_single(params: dict) -> tuple:
     bpp_idx = params["bpp_idx"]
     cfg_args = params["cfg_args"]
 
+    png_input_path = _ensure_png(input_path)
+
     mp = _get_thread_mp(cfg_args)
     mp.encoder.set_target_bpp_idx(bpp_idx)
-    mp.encode_stream({"input_path": input_path, "bin_path": bin_path})
+    mp.encode_stream({"input_path": png_input_path, "bin_path": bin_path})
 
     with open(bin_path, "rb") as f:
         bin_data = f.read()

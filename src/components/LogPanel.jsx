@@ -1,7 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import './LogPanel.css'
-
-const API_BASE = 'http://localhost:9000/micropixels'
+import API_BASE from '../config'
 
 function getLevelClass(line) {
   const lower = line.toLowerCase()
